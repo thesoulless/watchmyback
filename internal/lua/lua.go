@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	humanize "github.com/dustin/go-humanize"
+	"github.com/thesoulless/watchmyback/internal/email"
 	lua "github.com/yuin/gopher-lua"
 	luar "layeh.com/gopher-luar"
 )
@@ -78,9 +80,11 @@ func Import(pkg string) *lua.LTable {
 		return importHTTP()
 	case "archive/zip":
 		return importArchiveZip()
-	case "socket":
-		fmt.Println("socket is deprecated, use net instead")
-		return importSocket()
+	case "email":
+		return importEmail()
+	// case "socket":
+	// 	fmt.Println("socket is deprecated, use net instead")
+	// 	return importSocket()
 	default:
 		return nil
 	}
@@ -600,6 +604,95 @@ func importArchiveZip() *lua.LTable {
 	L.SetField(pkg, "NewWriter", luar.New(L, zip.NewWriter))
 
 	return pkg
+}
+
+const luaEmailTypeName = "email"
+
+func importEmail() *lua.LTable {
+	pkg := L.NewTable()
+	L.SetField(pkg, "new", luar.New(L, email.NewClient))
+	L.SetField(pkg, "getArray", luar.New(L, L.NewFunction(func(l *lua.LState) int {
+		// Get the first argument
+		arg := l.Get(1)
+
+		// Check if it's a userdata (which is how Go values are represented in Lua)
+		if ud, ok := arg.(*lua.LUserData); ok {
+			// Convert the Go slice to a Lua table
+			table := GoSliceToLuaTable(l, ud.Value)
+			l.Push(table)
+			return 1
+		}
+
+		// l.RaiseError("expected a Go slice")
+		fmt.Printf("expected a Go slice, got %v", arg)
+		table := l.NewTable()
+		l.Push(table)
+
+		return 1
+	})))
+	// L.SetField(pkg, "getArray", luar.New(L, email.GetArray))
+	return pkg
+}
+
+// LuaGetArray is the implementation of getArray for Lua
+func LuaGetArray(L *lua.LState) int {
+	// Get the first argument
+	arg := L.Get(1)
+
+	// Check if it's a userdata (which is how Go values are represented in Lua)
+	if ud, ok := arg.(*lua.LUserData); ok {
+		// Convert the Go slice to a Lua table
+		table := GoSliceToLuaTable(L, ud.Value)
+		L.Push(table)
+		return 1
+	}
+
+	L.RaiseError("expected a Go slice")
+	return 0
+}
+
+// GoSliceToLuaTable converts a Go slice to a Lua table
+func GoSliceToLuaTable(L *lua.LState, slice any) *lua.LTable {
+	table := L.NewTable()
+	sliceValue := reflect.ValueOf(slice)
+
+	if sliceValue.Kind() != reflect.Slice {
+		L.RaiseError("expected a slice, got %v", sliceValue.Kind())
+		return nil
+	}
+
+	for i := 0; i < sliceValue.Len(); i++ {
+		value := sliceValue.Index(i).Interface()
+		luaValue := GoValueToLuaValue(L, value)
+		L.RawSetInt(table, i+1, luaValue)
+	}
+
+	return table
+}
+
+// GoValueToLuaValue converts a Go value to a Lua value
+func GoValueToLuaValue(L *lua.LState, value interface{}) lua.LValue {
+	switch v := value.(type) {
+	case nil:
+		return lua.LNil
+	case bool:
+		return lua.LBool(v)
+	case int:
+		return lua.LNumber(v)
+	case int64:
+		return lua.LNumber(v)
+	case float64:
+		return lua.LNumber(v)
+	case string:
+		return lua.LString(v)
+	case uint32:
+		return lua.LNumber(v)
+	case []interface{}:
+		return GoSliceToLuaTable(L, v)
+	default:
+		L.RaiseError("unsupported type: %T", value)
+		return lua.LNil
+	}
 }
 
 func importSocket() *lua.LTable {
