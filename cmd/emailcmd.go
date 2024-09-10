@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/spf13/pflag"
 	"github.com/thesoulless/watchmyback/services/email"
 )
 
@@ -17,17 +18,17 @@ const (
 )
 
 func emailCommand(args []string) (string, int) {
-	// @TODO; select the correct mail client
+	flags := pflag.NewFlagSet("email", pflag.ExitOnError)
+	// flags.ParseErrorsWhitelist.UnknownFlags = true
+	flags.BoolVarP(&status, "status", "s", false, "just exit with status code")
+	flags.BoolVarP(&archive, "archive", "a", false, "archive the affected email(s)")
+	flags.Parse(args)
+
+	args = flags.Args()
 
 	service := args[0]
-	for _, srv := range args {
-		if strings.HasPrefix(srv, "--") {
-			continue
-		}
-
-		service = srv
-		break
-	}
+	command := args[1]
+	query := args[2]
 
 	srv, ok := emailSrvs.Get(service)
 	if !ok {
@@ -35,24 +36,29 @@ func emailCommand(args []string) (string, int) {
 		return "error: email service not found", int(Unknown)
 	}
 
-	res, err := srv.Search("Testing")
-	if err != nil {
-		if err == email.ErrNotFound {
-			info := fmt.Sprintf("%s: %s\n", "not found", err.Error())
-			return info, int(SearchNotFound)
+	switch command {
+	case "search":
+		res, err := srv.Search(query)
+		if err != nil {
+			if err == email.ErrNotFound {
+				info := fmt.Sprintf("%s: %s\n", "not found", err.Error())
+				return info, int(SearchNotFound)
+			}
+
+			info := fmt.Sprintf("%s: %s\n", "failed to search", err.Error())
+			return info, int(ClientError)
 		}
 
-		info := fmt.Sprintf("%s: %s\n", "failed to search", err.Error())
-		return info, int(ClientError)
-	}
+		fmt.Println(args)
+		if status {
+			info := fmt.Sprintf("status%v\n", res)
+			return info, int(SearchFound)
+		}
 
-	fmt.Println(args)
-	if args[0] == "--status" {
-		info := fmt.Sprintf("status%v\n", res)
+		fmt.Printf("emailCommand:\n%v\n", strings.Join(res, "\n"))
+		info := fmt.Sprintf("%v\n", strings.Join(res, "\n"))
 		return info, int(SearchFound)
+	default:
+		return "Unknown command", int(Unknown)
 	}
-
-	fmt.Printf("emailCommand:\n%v\n", strings.Join(res, "\n"))
-	info := fmt.Sprintf("%v\n", strings.Join(res, "\n"))
-	return info, int(SearchFound)
 }

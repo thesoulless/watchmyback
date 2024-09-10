@@ -7,7 +7,6 @@ import (
 )
 
 var (
-	// emailSrvs = NewList[*Service[*email.Core]]()
 	emailSrvs = NewList[*email.Core]()
 )
 
@@ -18,13 +17,8 @@ type Service[T io.Closer] struct {
 }
 
 func NewService[T io.Closer](val T) *Service[T] {
-	// return &Service[T]{val: val}
 	return &Service[T]{val: val}
 }
-
-// func (s *Service[T]) Close() error {
-// 	return s.val.Close()
-// }
 
 type List[T io.Closer] struct {
 	head *Service[T]

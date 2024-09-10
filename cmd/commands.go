@@ -9,6 +9,7 @@ import (
 var (
 	cfgFile string
 	status  bool
+	archive bool
 
 	rootCmd = &cobra.Command{
 		Use:              "cobra-cli",
@@ -17,6 +18,16 @@ var (
 		Long: `Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+			// runClient(os.Args[1:])
+		},
+	}
+
+	emailCmd = &cobra.Command{
+		Use:   "email",
+		Short: "Print the version number of Hugo",
+		Long:  `All software has versions. This is Hugo's`,
 		Run: func(cmd *cobra.Command, args []string) {
 			runClient(os.Args[1:])
 		},
@@ -37,7 +48,11 @@ to quickly create a Cobra application.`,
 
 func Init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.cobra.yaml)")
-	rootCmd.PersistentFlags().BoolVarP(&status, "status", "s", false, "just exit with status code")
+	// rootCmd.PersistentFlags().BoolVarP(&status, "status", "s", false, "just exit with status code")
+
+	emailCmd.Flags().BoolVarP(&status, "status", "s", false, "just exit with status code")
+	emailCmd.Flags().BoolVarP(&archive, "archive", "a", false, "archive the affected email(s)")
 
 	rootCmd.AddCommand(daemonCmd)
+	rootCmd.AddCommand(emailCmd)
 }
