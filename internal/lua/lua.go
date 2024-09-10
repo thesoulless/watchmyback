@@ -1,5 +1,8 @@
 package lua
 
+/*
+package lua
+
 import (
 	"archive/zip"
 	"bytes"
@@ -22,7 +25,6 @@ import (
 	"unicode/utf8"
 
 	humanize "github.com/dustin/go-humanize"
-	"github.com/thesoulless/watchmyback/internal/email"
 	lua "github.com/yuin/gopher-lua"
 	luar "layeh.com/gopher-luar"
 )
@@ -703,3 +705,4 @@ func importSocket() *lua.LTable {
 
 	return pkg
 }
+*/

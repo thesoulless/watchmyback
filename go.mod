@@ -3,7 +3,6 @@ module github.com/thesoulless/watchmyback
 go 1.22.6
 
 require (
-	github.com/dustin/go-humanize v1.0.1
 	github.com/emersion/go-imap/v2 v2.0.0-beta.3
 	github.com/emersion/go-message v0.18.1
 	github.com/spf13/cobra v1.8.1

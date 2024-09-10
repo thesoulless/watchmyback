@@ -90,11 +90,14 @@ func (e *Core) SelectMailbox(mailbox string) error {
 	return nil
 }
 
+var (
+	ErrClientError = errors.New("client error")
+	ErrNotFound    = errors.New("not found")
+)
+
 func (e *Core) Search(query string) ([]string, error) {
 	e.log.Info("searching", "query", query)
-	// c := e.client.Search(&imap.SearchCriteria{Text: query, NotFlag: []imap.Flag{imap.FlagSeen}}, &imap.SearchOptions{})
 
-	// c := e.client.Search(&imap.SearchCriteria{NotFlag: []imap.Flag{imap.FlagSeen}}, &imap.SearchOptions{})
 	c := e.client.Search(&imap.SearchCriteria{
 		Header: []imap.SearchCriteriaHeaderField{
 			{Key: "Subject", Value: query},
@@ -102,29 +105,16 @@ func (e *Core) Search(query string) ([]string, error) {
 		NotFlag: []imap.Flag{}}, &imap.SearchOptions{})
 	res, err := c.Wait()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrClientError, err)
 	}
 
 	e.log.Info("email count", "count", len(res.AllSeqNums()))
 
-	/*for _, uid := range res.AllSeqNums() {
-		e.log.Info("processing email", "uid", uid)
-		if e.processEmail(uid, query) {
-			return res.AllSeqNums(), nil
-		}
-	}*/
-	// var numSet imap.NumSet
-	// numSet := imap.UIDSetNum(res.AllUIDs()...)
 	numSet := imap.SeqSetNum(res.AllSeqNums()...)
-	// for _, uid := range res.AllUIDs() {
-	// numSet = append(numSet, imap.SingleNum(uid))
-	// }
 
-	// uidset, ok := res.All.(imap.UIDSet)
-	// if !ok {
-	// 	e.log.Error("faild to convert uidset")
-	// 	return nil, errors.New("invalid uidset")
-	// }
+	if len(res.AllSeqNums()) == 0 {
+		return nil, ErrNotFound
+	}
 
 	fetchCmd := e.client.Fetch(numSet, &imap.FetchOptions{
 		Envelope: true,
@@ -134,12 +124,6 @@ func (e *Core) Search(query string) ([]string, error) {
 		},
 	})
 	defer fetchCmd.Close()
-
-	// err = fetchCmd.Wait()
-	// if err != nil {
-	// 	e.log.Error("failed to fetch", "error", err)
-	// 	return nil, errors.New("failed tp fetch")
-	// }
 
 	var result []string
 	for {
@@ -151,10 +135,8 @@ func (e *Core) Search(query string) ([]string, error) {
 		data, err := msg.Collect()
 		if err != nil {
 			e.log.Error("failed to collect msg", "error", err)
-			return nil, err
+			return nil, fmt.Errorf("%w: %v", ErrClientError, err)
 		}
-		fmt.Println(data.Envelope.Subject)
-		fmt.Println(strings.Contains(data.Envelope.Subject, query))
 
 		result = append(result, data.Envelope.Subject)
 	}
