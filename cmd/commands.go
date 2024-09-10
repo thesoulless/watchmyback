@@ -12,15 +12,16 @@ var (
 	archive bool
 
 	rootCmd = &cobra.Command{
-		Use:              "cobra-cli",
+		Use:              "wmb",
 		TraverseChildren: true,
-		Short:            "A generator for Cobra based Applications",
-		Long: `Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+		Short:            "A tool to automate some of my tasks",
+		Long:             `By default, it will run the daemon command`,
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
-			// runClient(os.Args[1:])
+			err := runDaemon(cfgFile)
+			if err != nil {
+				log.Error("failed to run daemon", "error", err)
+				os.Exit(1)
+			}
 		},
 	}
 
