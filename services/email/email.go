@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"mime"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
@@ -95,8 +94,13 @@ var (
 	ErrNotFound    = errors.New("not found")
 )
 
-func (e *Core) Search(query string) ([]string, error) {
+func (e *Core) Search(query string) ([]string, []uint32, error) {
 	e.log.Info("searching", "query", query)
+
+	err := e.healthCheck()
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %v", ErrClientError, err)
+	}
 
 	c := e.client.Search(&imap.SearchCriteria{
 		Header: []imap.SearchCriteriaHeaderField{
@@ -105,15 +109,17 @@ func (e *Core) Search(query string) ([]string, error) {
 		NotFlag: []imap.Flag{}}, &imap.SearchOptions{})
 	res, err := c.Wait()
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrClientError, err)
+		return nil, nil, fmt.Errorf("%w: %v", ErrClientError, err)
 	}
 
-	e.log.Info("email count", "count", len(res.AllSeqNums()))
+	seqnums := res.AllSeqNums()
 
-	numSet := imap.SeqSetNum(res.AllSeqNums()...)
+	e.log.Info("email count", "count", len(seqnums))
 
-	if len(res.AllSeqNums()) == 0 {
-		return nil, ErrNotFound
+	numSet := imap.SeqSetNum(seqnums...)
+
+	if len(seqnums) == 0 {
+		return nil, nil, ErrNotFound
 	}
 
 	fetchCmd := e.client.Fetch(numSet, &imap.FetchOptions{
@@ -135,13 +141,41 @@ func (e *Core) Search(query string) ([]string, error) {
 		data, err := msg.Collect()
 		if err != nil {
 			e.log.Error("failed to collect msg", "error", err)
-			return nil, fmt.Errorf("%w: %v", ErrClientError, err)
+			return nil, seqnums, fmt.Errorf("%w: %v", ErrClientError, err)
 		}
 
 		result = append(result, data.Envelope.Subject)
 	}
 
-	return result, nil
+	return result, seqnums, nil
+}
+
+func (e *Core) healthCheck() error {
+	e.log.Info("health check")
+
+	state := e.client.State()
+	switch state {
+
+	case imap.ConnStateNone, imap.ConnStateNotAuthenticated, imap.ConnStateLogout:
+		options := &imapclient.Options{
+			WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader},
+		}
+
+		target := fmt.Sprintf("%s:%s", e.conf.Host, e.conf.Port)
+
+		var err error
+		e.client, err = imapclient.DialTLS(target, options)
+		if err != nil {
+			e.log.Error("error reconnecting to the imap server", "error", err)
+			return errors.New("error reconnecting to the imap server")
+		}
+
+		e.client.Login(e.conf.Username, e.conf.Password)
+		e.SelectMailbox("INBOX")
+		return nil
+	default:
+		return nil
+	}
 }
 
 type customOutput struct{}
@@ -151,91 +185,8 @@ func (c customOutput) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// func processEmail(c *imapclient.Client, uid uint32, justArchive bool) bool {
-func (e *Core) processEmail(uid uint32, query string) bool {
-	seqSet := imap.SeqSetNum(uid)
-
-	e.log.Info("fetching", "seqSet", seqSet)
-
-	// BodyStructure     *FetchItemBodyStructure
-	// Envelope          bool
-	// Flags             bool
-	// InternalDate      bool
-	// RFC822Size        bool
-	// UID               bool
-	// BodySection       []*FetchItemBodySection
-	// BinarySection     []*FetchItemBinarySection     // requires IMAP4rev2 or BINARY
-	// BinarySectionSize []*FetchItemBinarySectionSize // requires IMAP4rev2 or BINARY
-	// ModSeq            bool                          // requires CONDSTORE
-	// ChangedSince uint64 // requires CONDSTORE
-
-	msgs, err := e.client.Fetch(seqSet, &imap.FetchOptions{Flags: true,
-		Envelope:    true,
-		RFC822Size:  true,
-		BodySection: []*imap.FetchItemBodySection{{Specifier: imap.PartSpecifierHeader}},
-	}).Collect()
-	if err != nil {
-		e.log.Error("fetching message", "error", err)
-		return false
-	}
-
-	for _, msg := range msgs {
-		if msg == nil {
-			e.log.Error("nil message", "error", errors.New("server didn't return the message"))
-			return false
-		}
-
-		e.log.Info("searching email", "query", query, "subject", msg.Envelope.Subject)
-		subject := msg.Envelope.Subject
-		if strings.Contains(strings.ToLower(subject), strings.ToLower(query)) {
-			e.log.Info("found email", "subject", subject)
-
-			// if justArchive {
-			// 	moveToArchive(c, seqSet)
-			// 	return true
-			// }
-
-			e.log.Info("running bash script")
-
-			// Run bash script
-			/*cmd := exec.Command("/bin/bash", bashScriptPath, "newytdlp")
-			cmd.Env = os.Environ()
-			cmd.Dir = bashScriptPath[:strings.LastIndex(bashScriptPath, "/")]
-			log.Println("Running bash script in directory:", cmd.Dir)
-
-			cmd.Stdout = customOutput{}
-			cmd.Stderr = customOutput{}
-
-			if err = cmd.Run(); err != nil {
-				// log.Printf("Error running bash script: %v: %s", err, string(res))
-				log.Printf("Error running bash script: %v", err)
-				return false
-			}
-
-			if cmd.ProcessState.ExitCode() == 0 {
-				// sres := string(res)
-				log.Println("Bash script executed successfully")
-				// Archive the email
-				moveToArchive(c, seqSet)
-
-				// Send Slack message
-				time.Sleep(5 * time.Minute)
-				text := "<!channel> New version of helpercompanion is deployed:\n\n\t\t- yt-dlp updated to the latest version"
-				text += "\n\n(it will be installed on your machine in the next auto update)"
-				sendSlackMessage(text)
-
-				return true
-			}*/
-			return true
-		}
-	}
-
-	return false
-}
-
 func (e *Core) Archive(seqs []uint32) error {
-	seqSet := new(imap.SeqSet)
-	seqSet.AddNum(seqs...)
+	seqSet := imap.SeqSetNum(seqs...)
 
 	e.log.Info("archiving", "seqSet", seqSet)
 	c := e.client.Move(seqSet, "Archive")
@@ -249,17 +200,16 @@ func (e *Core) Archive(seqs []uint32) error {
 func (e *Core) Run() {
 	e.Login(e.conf.Username, e.conf.Password)
 	e.SelectMailbox("INBOX")
-	// e.log.Info("refreshing email", "account", e.conf.Name)
 
 	for range e.ticker.C {
 		// @TODO: do we rly need this?
-		// e.log.Info("refreshing email", "account", e.conf.Name)
 	}
 
 	e.done <- struct{}{}
 }
 
 func (e *Core) Close() error {
+	e.log.Info("closing email client")
 	e.ticker.Stop()
 	<-e.done
 

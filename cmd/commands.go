@@ -34,6 +34,14 @@ var (
 		},
 	}
 
+	slackCmd = &cobra.Command{
+		Use:   "slack",
+		Short: "Interact with slack api",
+		Run: func(cmd *cobra.Command, args []string) {
+			runClient(os.Args[1:])
+		},
+	}
+
 	daemonCmd = &cobra.Command{
 		Use:   "daemon",
 		Short: "Print the version number of Hugo",
@@ -55,5 +63,6 @@ func Init() {
 	emailCmd.Flags().BoolVarP(&archive, "archive", "a", false, "archive the affected email(s)")
 
 	rootCmd.AddCommand(daemonCmd)
+	rootCmd.AddCommand(slackCmd)
 	rootCmd.AddCommand(emailCmd)
 }

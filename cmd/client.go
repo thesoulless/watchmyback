@@ -17,12 +17,13 @@ func runClient(args []string) {
 	}
 	defer conn.Close()
 
-	fmt.Fprintf(conn, strings.Join(args, " ")+"\n")
+	Write(conn, strings.Join(args, "\x00"))
+	// fmt.Fprintf(conn, strings.Join(args, " ")+"\n")
 
 	headerLen := make([]byte, 8)
 	_, err = io.ReadFull(conn, headerLen)
 	if err != nil {
-		fmt.Println("Error reading response:", err)
+		fmt.Println("Error reading header:", err)
 		// @TODO: use a named status code
 		os.Exit(200)
 	}
@@ -30,7 +31,7 @@ func runClient(args []string) {
 	lengthBytes := make([]byte, 4)
 	_, err = io.ReadFull(conn, lengthBytes)
 	if err != nil {
-		fmt.Println("Error reading response:", err)
+		fmt.Println("Error reading length:", err)
 		// @TODO: use a named status code
 		os.Exit(200)
 	}

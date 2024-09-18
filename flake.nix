@@ -40,6 +40,7 @@
 
           # https://devenv.sh/reference/options/
           packages = with pkgs; [
+            go_1_23
             gotools
             go-tools
             govulncheck
@@ -58,7 +59,7 @@
           '';
 
           # https://devenv.sh/languages/
-          languages.go.enable = true;
+          # languages.go.enable = true;
 
           # Make diffs fantastic
           difftastic.enable = true;

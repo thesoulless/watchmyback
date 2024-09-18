@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -15,6 +16,7 @@ const (
 	ClientError
 	SearchFound
 	SearchNotFound
+	ArchiveError
 )
 
 func emailCommand(args []string) (string, int) {
@@ -38,15 +40,23 @@ func emailCommand(args []string) (string, int) {
 
 	switch command {
 	case "search":
-		res, err := srv.Search(query)
+		res, seqnums, err := srv.Search(query)
 		if err != nil {
-			if err == email.ErrNotFound {
+			if errors.Is(err, email.ErrNotFound) {
 				info := fmt.Sprintf("%s: %s\n", "not found", err.Error())
 				return info, int(SearchNotFound)
 			}
 
 			info := fmt.Sprintf("%s: %s\n", "failed to search", err.Error())
 			return info, int(ClientError)
+		}
+
+		if archive {
+			err = srv.Archive(seqnums)
+			if err != nil {
+				info := fmt.Sprintf("%s: %s\n", "failed to archive", err.Error())
+				return info, int(ArchiveError)
+			}
 		}
 
 		fmt.Println(args)

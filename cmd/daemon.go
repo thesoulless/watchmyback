@@ -1,9 +1,9 @@
 package main
 
 import (
-	"bufio"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"slices"
 	"strings"
@@ -23,6 +23,41 @@ var (
 	mu   = sync.Mutex{}
 	conn net.Conn
 )
+
+func Read(conn net.Conn) ([]byte, error) {
+	// log.Info("read from connection")
+	headerLen := make([]byte, 8)
+	_, err := io.ReadFull(conn, headerLen)
+	if err != nil {
+		// fmt.Println("Error reading header (Read):", err)
+		// @TODO: use a named status code
+		// os.Exit(200)
+		return nil, err
+	}
+
+	lengthBytes := make([]byte, 4)
+	_, err = io.ReadFull(conn, lengthBytes)
+	if err != nil {
+		fmt.Println("Error reading length (Read):", err)
+		// @TODO: use a named status code
+		// os.Exit(200)
+		return nil, err
+	}
+
+	// Convert the length prefix to an integer
+	length := binary.BigEndian.Uint32(lengthBytes)
+
+	response := make([]byte, length)
+	_, err = io.ReadFull(conn, response)
+	if err != nil {
+		fmt.Println("Error reading:", err)
+		// @TODO: use a named status code
+		// os.Exit(200)
+		return nil, err
+	}
+
+	return response, nil
+}
 
 func Write(conn net.Conn, response string) error {
 	header := make([]byte, 8)
@@ -97,18 +132,20 @@ func runDaemon(configFile string) error {
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
-	reader := bufio.NewReader(conn)
+	// reader := bufio.NewReader(conn)
 	for {
-		commandArgs, err := reader.ReadString('\n')
+		commandArgsb, err := Read(conn)
+		// commandArgs, err := reader.ReadString('\n')
 		if err != nil {
 			return
 		}
+		commandArgs := string(commandArgsb)
 		commandArgs = strings.TrimSpace(commandArgs)
 		if len(commandArgs) < 1 {
 			conn.Write([]byte("invalid operation, run --help for more help\n"))
 			continue
 		}
-		caslice := strings.Split(commandArgs, " ")
+		caslice := strings.Split(commandArgs, "\x00")
 		var args []string
 		command := caslice[0]
 		command = strings.TrimSpace(command)
@@ -125,6 +162,10 @@ func handleConnection(conn net.Conn) {
 		switch command {
 		case "email":
 			response, ex = emailCommand(args)
+		case "slack":
+			log.Info("slack command handleconnection", "args", args)
+			fmt.Printf("\n\n%#v\n\n", args[2])
+			response = runSlack(args)
 		case "len":
 			response = fmt.Sprintf("%s %s: %d\n", command, strings.Join(args, " "), emailSrvs.Len())
 		default:
