@@ -3,6 +3,7 @@ package email
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"mime"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message/charset"
+	"github.com/emersion/go-message/mail"
+	"jaytaylor.com/html2text"
 )
 
 type Conf struct {
@@ -94,7 +97,111 @@ var (
 	ErrNotFound    = errors.New("not found")
 )
 
-func (e *Core) Search(query string) ([]string, []uint32, error) {
+// Body reads an email by sequence number
+// and returns the email body
+func (e *Core) Body(seqnum uint32) (string, error) {
+	e.log.Info("reading", "seqnum", seqnum)
+
+	err := e.healthCheck()
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrClientError, err)
+	}
+
+	c := e.client.Fetch(imap.SeqSetNum(seqnum), &imap.FetchOptions{
+		BodySection: []*imap.FetchItemBodySection{
+			// {Peek: true, Specifier: imap.PartSpecifierHeader},
+			// {Peek: true, Specifier: imap.PartSpecifierText},
+			{Peek: true},
+		},
+	})
+	defer c.Close()
+
+	msg := c.Next()
+	if msg == nil {
+		e.log.Error("FETCH command returned no message")
+		return "", ErrNotFound
+	}
+
+	var body string
+	var bodySection imapclient.FetchItemDataBodySection
+	ok := false
+	for {
+		item := msg.Next()
+		if item == nil {
+			break
+		}
+		bodySection, ok = item.(imapclient.FetchItemDataBodySection)
+		if ok {
+			break
+		}
+	}
+	if !ok {
+		e.log.Error("FETCH command did not return body section")
+		// @TODO: return proper error
+		return "", ErrNotFound
+	}
+
+	// Read the message via the go-message library
+	mr, err := mail.CreateReader(bodySection.Literal)
+	if err != nil {
+		e.log.Error("failed to create mail reader", "error", err)
+		return "", fmt.Errorf("%w: %v", ErrClientError, err)
+	}
+
+	// Print a few header fields
+	// h := mr.Header
+	/*if date, err := h.Date(); err != nil {
+		e.log.Error("failed to parse Date header field","error", err)
+		return "", fmt.Errorf("%w: %v", ErrClientError, err)
+	} else {
+		e.log.Info("Date: %v", date)
+	}
+	if to, err := h.AddressList("To"); err != nil {
+		e.log.Printf("failed to parse To header field: %v", err)
+	} else {
+		e.log.Printf("To: %v", to)
+	}
+	if subject, err := h.Text("Subject"); err != nil {
+		e.log.Printf("failed to parse Subject header field: %v", err)
+	} else {
+		e.log.Printf("Subject: %v", subject)
+	}*/
+
+	// Process the message's parts
+	for {
+		p, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			e.log.Error("failed to read message part", "error", err)
+			return "", fmt.Errorf("%w: %v", ErrClientError, err)
+		}
+
+		// switch h := p.Header.(type) {
+		switch p.Header.(type) {
+		case *mail.InlineHeader:
+			// This is the message's text (can be plain-text or HTML)
+			b, _ := io.ReadAll(p.Body)
+			// e.log.Info("inline text", "text", string(b))
+			body = string(b)
+			// case *mail.AttachmentHeader:
+			// This is an attachment
+			// filename, _ := h.Filename()
+			// e.log.Printf("Attachment: %v", filename)
+		}
+	}
+
+	// Convert HTML to plain text
+	body, err = html2text.FromString(body)
+	if err != nil {
+		e.log.Error("failed to convert html to text", "error", err)
+		return "", fmt.Errorf("%w: %v", ErrClientError, err)
+	}
+
+	return body, nil
+}
+
+func (e *Core) Search(query string, from string) ([]string, []uint32, error) {
 	e.log.Info("searching", "query", query)
 
 	err := e.healthCheck()
@@ -102,10 +209,16 @@ func (e *Core) Search(query string) ([]string, []uint32, error) {
 		return nil, nil, fmt.Errorf("%w: %v", ErrClientError, err)
 	}
 
+	header := []imap.SearchCriteriaHeaderField{
+		{Key: "Subject", Value: query},
+	}
+
+	if from != "" {
+		header = append(header, imap.SearchCriteriaHeaderField{Key: "From", Value: from})
+	}
+
 	c := e.client.Search(&imap.SearchCriteria{
-		Header: []imap.SearchCriteriaHeaderField{
-			{Key: "Subject", Value: query},
-		},
+		Header:  header,
 		NotFlag: []imap.Flag{}}, &imap.SearchOptions{})
 	res, err := c.Wait()
 	if err != nil {
@@ -183,6 +296,18 @@ type customOutput struct{}
 func (c customOutput) Write(p []byte) (int, error) {
 	fmt.Print(string(p))
 	return len(p), nil
+}
+
+func (e *Core) Move(seqs []uint32, mailbox string) error {
+	seqSet := imap.SeqSetNum(seqs...)
+
+	e.log.Info("moving", "seqSet", seqSet, "mailbox", mailbox)
+	c := e.client.Move(seqSet, mailbox)
+	if _, err := c.Wait(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (e *Core) Archive(seqs []uint32) error {

@@ -8,8 +8,11 @@ import (
 
 var (
 	cfgFile string
+	from    string
 	status  bool
+	seqs    bool
 	archive bool
+	read    bool
 
 	rootCmd = &cobra.Command{
 		Use:              "wmb",
@@ -60,7 +63,10 @@ func Init() {
 	// rootCmd.PersistentFlags().BoolVarP(&status, "status", "s", false, "just exit with status code")
 
 	emailCmd.Flags().BoolVarP(&status, "status", "s", false, "just exit with status code")
+	emailCmd.Flags().BoolVar(&seqs, "seqs", false, "print sequence numbers")
 	emailCmd.Flags().BoolVarP(&archive, "archive", "a", false, "archive the affected email(s)")
+	emailCmd.Flags().StringVarP(&from, "from", "f", "", "from email address")
+	emailCmd.Flags().BoolVarP(&read, "read", "r", false, "read from stdin")
 
 	rootCmd.AddCommand(daemonCmd)
 	rootCmd.AddCommand(slackCmd)

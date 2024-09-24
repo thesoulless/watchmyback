@@ -3,15 +3,16 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    systems.url = "github:nix-systems/default";
     devenv.url = "github:cachix/devenv";
+    devenv.inputs.nixpkgs.follows = "nixpkgs";
     nix2container.url = "github:nlewo/nix2container";
     nix2container.inputs.nixpkgs.follows = "nixpkgs";
     mk-shell-bin.url = "github:rrbutani/nix-mk-shell-bin";
   };
 
   nixConfig = {
-    extra-trusted-public-keys =
-      "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=";
+    extra-trusted-public-keys = "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=";
     extra-substituters = "https://devenv.cachix.org";
   };
 
@@ -40,7 +41,6 @@
 
           # https://devenv.sh/reference/options/
           packages = with pkgs; [
-            go_1_23
             gotools
             go-tools
             govulncheck
@@ -59,7 +59,7 @@
           '';
 
           # https://devenv.sh/languages/
-          # languages.go.enable = true;
+          languages.go.enable = true;
 
           # Make diffs fantastic
           difftastic.enable = true;
