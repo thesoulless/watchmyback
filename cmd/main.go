@@ -11,21 +11,12 @@ import (
 
 	"github.com/thesoulless/watchmyback/services/email"
 
-	// luar "layeh.com/gopher-luar"
-
 	"gopkg.in/yaml.v3"
 )
 
 var (
-	log = slog.New(slog.NewTextHandler(os.Stderr, nil))
+	log = slog.New(slog.NewTextHandler(os.Stdout, nil))
 )
-
-func init() {
-	// ulua.L = lua.NewState()
-	// ulua.L.SetGlobal("import", luar.New(ulua.L, LuaImport))
-	// ulua.L.SetGlobal("require", luar.New(ulua.L, LuaImport))
-	// // ulua.InternalLibs()
-}
 
 // Execute executes the root command.
 func run(ctx context.Context) error {
@@ -74,10 +65,6 @@ var (
 	Version = []byte("1.0")
 )
 
-// func LuaImport(pkg string) *lua.LTable {
-// 	return ulua.Import(pkg)
-// }
-
 type T struct {
 	Emails []email.Conf `yaml:"email"`
 }
@@ -100,6 +87,5 @@ func readConfig(conf string) (T, error) {
 		return t, fmt.Errorf("failed to readConfig yaml.Unmarshal: %w", err)
 	}
 
-	fmt.Printf("--- t:\n%v\n\n", t)
 	return t, nil
 }

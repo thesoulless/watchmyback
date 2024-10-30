@@ -2,12 +2,6 @@ package main
 
 import (
 	"io"
-
-	"github.com/thesoulless/watchmyback/services/email"
-)
-
-var (
-	emailSrvs = NewList[*email.Core]()
 )
 
 type Service[T io.Closer] struct {
@@ -70,26 +64,3 @@ func (l *List[T]) Get(name string) (T, bool) {
 
 	return node.val, true
 }
-
-// func (l *List[T]) Add(name string, val any) {
-// 	if _, ok := l.c[name]; ok {
-// 		return
-// 	}
-// 	node := NewService(val)
-// 	node.Name = name
-// 	node.val = val
-
-// 	var index int
-// 	if l.head == nil {
-// 		l.head = node
-// 	} else {
-// 		for n := l.head; n != nil; n = n.next {
-// 			index++
-// 			if n.next == nil {
-// 				n.next = node
-// 				break
-// 			}
-// 		}
-// 	}
-// 	l.c[name] = index
-// }

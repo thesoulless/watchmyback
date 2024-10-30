@@ -8,14 +8,12 @@ import (
 )
 
 func runSlack(args []string) string {
-	log.Info("slack command (runSlack)", "args", args)
+	log.Debug("slack command (runSlack)", "args", args)
 	flags := pflag.NewFlagSet("slack", pflag.ExitOnError)
-	// flags.ParseErrorsWhitelist.UnknownFlags = true
-	// flags.BoolVarP(&status, "status", "s", false, "just exit with status code")
 	flags.Parse(args)
 
 	args = flags.Args()
-	log.Info("args", "args", args)
+	log.Debug("args", "args", args)
 
 	command := args[0]
 	uri := args[1]
@@ -23,7 +21,7 @@ func runSlack(args []string) string {
 
 	switch command {
 	case "webhook":
-		log.Info("sending message to slack", "uri", uri, "msg", msg)
+		log.Debug("sending message to slack", "uri", uri, "msg", msg)
 		err := slack.SendToChanel(context.Background(), uri, msg)
 		if err != nil {
 			return err.Error()

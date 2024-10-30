@@ -22,6 +22,7 @@ type Conf struct {
 	Password string `yaml:"password"`
 	Host     string `yaml:"host"`
 	Port     string `yaml:"port"`
+	LogLevel *slog.Level
 }
 
 type Core struct {
@@ -33,14 +34,20 @@ type Core struct {
 }
 
 func New(conf Conf) (*Core, error) {
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	l := slog.LevelInfo
+	if conf.LogLevel != nil {
+		l = *conf.LogLevel
+	}
+	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: l,
+	}))
 
 	options := &imapclient.Options{
 		WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader},
 	}
 
 	target := fmt.Sprintf("%s:%s", conf.Host, conf.Port)
-	log.Info("new email client", "target", target)
+	log.Debug("new email client", "target", target)
 
 	client, err := imapclient.DialTLS(target, options)
 	if err != nil {
@@ -59,7 +66,7 @@ func New(conf Conf) (*Core, error) {
 }
 
 func (e *Core) Login(username, password string) error {
-	e.log.Info("logging in", "username", username)
+	e.log.Debug("logging in", "username", username)
 	c := e.client.Login(username, password)
 	if err := c.Wait(); err != nil {
 		e.log.Error("error logging in", "error", err)
@@ -97,10 +104,9 @@ var (
 	ErrNotFound    = errors.New("not found")
 )
 
-// Body reads an email by sequence number
-// and returns the email body
+// Body reads an email by sequence number and returns the email body
 func (e *Core) Body(seqnum uint32) (string, error) {
-	e.log.Info("reading", "seqnum", seqnum)
+	e.log.Debug("reading", "seqnum", seqnum)
 
 	err := e.healthCheck()
 	if err != nil {
@@ -109,8 +115,6 @@ func (e *Core) Body(seqnum uint32) (string, error) {
 
 	c := e.client.Fetch(imap.SeqSetNum(seqnum), &imap.FetchOptions{
 		BodySection: []*imap.FetchItemBodySection{
-			// {Peek: true, Specifier: imap.PartSpecifierHeader},
-			// {Peek: true, Specifier: imap.PartSpecifierText},
 			{Peek: true},
 		},
 	})
@@ -136,38 +140,18 @@ func (e *Core) Body(seqnum uint32) (string, error) {
 		}
 	}
 	if !ok {
-		e.log.Error("FETCH command did not return body section")
-		// @TODO: return proper error
-		return "", ErrNotFound
+		e.log.Debug("FETCH command did not return body section")
+		return "", fmt.Errorf("%w: %v", ErrClientError, "FETCH command did not return body section")
 	}
 
-	// Read the message via the go-message library
+	// read the message via the go-message library
 	mr, err := mail.CreateReader(bodySection.Literal)
 	if err != nil {
 		e.log.Error("failed to create mail reader", "error", err)
 		return "", fmt.Errorf("%w: %v", ErrClientError, err)
 	}
 
-	// Print a few header fields
-	// h := mr.Header
-	/*if date, err := h.Date(); err != nil {
-		e.log.Error("failed to parse Date header field","error", err)
-		return "", fmt.Errorf("%w: %v", ErrClientError, err)
-	} else {
-		e.log.Info("Date: %v", date)
-	}
-	if to, err := h.AddressList("To"); err != nil {
-		e.log.Printf("failed to parse To header field: %v", err)
-	} else {
-		e.log.Printf("To: %v", to)
-	}
-	if subject, err := h.Text("Subject"); err != nil {
-		e.log.Printf("failed to parse Subject header field: %v", err)
-	} else {
-		e.log.Printf("Subject: %v", subject)
-	}*/
-
-	// Process the message's parts
+	// process the message's parts
 	for {
 		p, err := mr.NextPart()
 		if err == io.EOF {
@@ -177,21 +161,15 @@ func (e *Core) Body(seqnum uint32) (string, error) {
 			return "", fmt.Errorf("%w: %v", ErrClientError, err)
 		}
 
-		// switch h := p.Header.(type) {
 		switch p.Header.(type) {
 		case *mail.InlineHeader:
-			// This is the message's text (can be plain-text or HTML)
 			b, _ := io.ReadAll(p.Body)
-			// e.log.Info("inline text", "text", string(b))
 			body = string(b)
 			// case *mail.AttachmentHeader:
-			// This is an attachment
-			// filename, _ := h.Filename()
-			// e.log.Printf("Attachment: %v", filename)
 		}
 	}
 
-	// Convert HTML to plain text
+	// convert HTML to plain text
 	body, err = html2text.FromString(body)
 	if err != nil {
 		e.log.Error("failed to convert html to text", "error", err)
@@ -202,7 +180,7 @@ func (e *Core) Body(seqnum uint32) (string, error) {
 }
 
 func (e *Core) Search(query string, from string) ([]string, []uint32, error) {
-	e.log.Info("searching", "query", query)
+	e.log.Debug("searching", "query", query)
 
 	err := e.healthCheck()
 	if err != nil {
@@ -227,7 +205,7 @@ func (e *Core) Search(query string, from string) ([]string, []uint32, error) {
 
 	seqnums := res.AllSeqNums()
 
-	e.log.Info("email count", "count", len(seqnums))
+	e.log.Debug("email count", "count", len(seqnums))
 
 	numSet := imap.SeqSetNum(seqnums...)
 
@@ -264,7 +242,7 @@ func (e *Core) Search(query string, from string) ([]string, []uint32, error) {
 }
 
 func (e *Core) healthCheck() error {
-	e.log.Info("health check")
+	e.log.Debug("health check")
 
 	state := e.client.State()
 	switch state {
@@ -301,7 +279,7 @@ func (c customOutput) Write(p []byte) (int, error) {
 func (e *Core) Move(seqs []uint32, mailbox string) error {
 	seqSet := imap.SeqSetNum(seqs...)
 
-	e.log.Info("moving", "seqSet", seqSet, "mailbox", mailbox)
+	e.log.Debug("moving", "seqSet", seqSet, "mailbox", mailbox)
 	c := e.client.Move(seqSet, mailbox)
 	if _, err := c.Wait(); err != nil {
 		return err
@@ -313,7 +291,7 @@ func (e *Core) Move(seqs []uint32, mailbox string) error {
 func (e *Core) Archive(seqs []uint32) error {
 	seqSet := imap.SeqSetNum(seqs...)
 
-	e.log.Info("archiving", "seqSet", seqSet)
+	e.log.Debug("archiving", "seqSet", seqSet)
 	c := e.client.Move(seqSet, "Archive")
 	if _, err := c.Wait(); err != nil {
 		return err
@@ -322,19 +300,8 @@ func (e *Core) Archive(seqs []uint32) error {
 	return nil
 }
 
-func (e *Core) Run() {
-	e.Login(e.conf.Username, e.conf.Password)
-	e.SelectMailbox("INBOX")
-
-	for range e.ticker.C {
-		// @TODO: do we rly need this?
-	}
-
-	e.done <- struct{}{}
-}
-
 func (e *Core) Close() error {
-	e.log.Info("closing email client")
+	e.log.Debug("closing email client")
 	e.ticker.Stop()
 	<-e.done
 

@@ -3,10 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 
-	"github.com/spf13/pflag"
 	"github.com/thesoulless/watchmyback/services/email"
 )
 
@@ -23,25 +23,39 @@ const (
 	ArchiveError
 )
 
+var (
+	ErrUnknown = errors.New("unknown error")
+	ErrClient  = errors.New("client error")
+	ErrSearch  = errors.New("search error")
+	ErrArchive = errors.New("archive error")
+)
+
 func emailCommand(args []string) (string, int) {
-	flags := pflag.NewFlagSet("email", pflag.ExitOnError)
-	// flags.ParseErrorsWhitelist.UnknownFlags = true
-	flags.BoolVarP(&status, "status", "s", false, "just exit with status code")
-	flags.BoolVar(&seqs, "seqs", false, "print sequence numbers")
-	flags.StringVarP(&from, "from", "f", "", "from email address")
-	flags.BoolVarP(&archive, "archive", "a", false, "archive the affected email(s)")
-	flags.Parse(args)
-
-	args = flags.Args()
-
 	service := args[0]
 	command := args[1]
 	query := args[2]
 
-	srv, ok := emailSrvs.Get(service)
-	if !ok {
-		log.Error("email service not found", "service", service)
-		return "error: email service not found", int(Unknown)
+	log.Debug("email command", "service", service, "command", command, "query", query)
+
+	conf, err := readConfig(cfgFile)
+	if err != nil {
+		return "", int(Unknown)
+	}
+
+	var srv *email.Core
+	for _, e := range conf.Emails {
+		if e.Name != service {
+			continue
+		}
+		if debug {
+			l := slog.LevelDebug
+			e.LogLevel = &l
+		}
+		srv, err = email.New(e)
+		if err != nil {
+			return "", int(Unknown)
+		}
+		break
 	}
 
 	switch command {
@@ -65,22 +79,19 @@ func emailCommand(args []string) (string, int) {
 			}
 		}
 
-		fmt.Println(args)
 		if status {
 			info := fmt.Sprintf("status%v\n", res)
 			return info, int(SearchFound)
 		}
 
 		if seqs {
-			seqnumsStr := fmt.Sprintf("%v", seqnums)
-			seqnumsStr = strings.Trim(seqnumsStr, "[]")
-			seqnumsStr = strings.ReplaceAll(seqnumsStr, " ", "\n")
-			info := fmt.Sprintf("%s\n", seqnumsStr)
+			info := fmt.Sprintf("%v", seqnums)
+			info = strings.Trim(info, "[]")
+			info = strings.ReplaceAll(info, " ", "\n")
 			return info, int(SearchFound)
 		}
 
-		fmt.Printf("emailCommand:\n%v\n", strings.Join(res, "\n"))
-		info := fmt.Sprintf("%v\n", strings.Join(res, "\n"))
+		info := strings.Join(res, "\n")
 		return info, int(SearchFound)
 	case "inbox":
 		seqnum, err := strconv.Atoi(query)
@@ -105,7 +116,6 @@ func emailCommand(args []string) (string, int) {
 			return info, int(OK)
 		}
 
-		// fmt.Printf("emailCommand:\n%v\n", res)
 		info := fmt.Sprintf("%v\n", "OK")
 		return info, int(OK)
 	case "archive":
@@ -130,7 +140,6 @@ func emailCommand(args []string) (string, int) {
 			return info, int(OK)
 		}
 
-		// fmt.Printf("emailCommand:\n%v\n", res)
 		info := fmt.Sprintf("%v\n", "OK")
 		return info, int(OK)
 	case "read":
@@ -164,7 +173,6 @@ func emailCommand(args []string) (string, int) {
 			return info, int(SearchFound)
 		}
 
-		// fmt.Printf("emailCommand:\n%v\n", res)
 		info := fmt.Sprintf("%v\n", res)
 		return info, int(OK)
 	default:
